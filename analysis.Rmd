@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Sistema de Recomendación de Peliculas
+## Movie Recommendation System
 
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
@@ -18,16 +18,13 @@ load("rdas/edx.rda")
 load("rdas/validation.rda")
 ```
 
-Intentaremos predecir la calificación que un usuario daria a una
-pelicula, basado en la información de calificaciones dadas por otros
-usuarios.
+## Introduction
 
-Utilizaremos la base de datos de calificaciones del laboratorio de
-investigacion GroupLens: https://grouplens.org/datasets/movielens/
+We will try to predict the rating that a user would give to a movie, based on information from ratings given by others users
 
-Podemos imaginar nuestros datos como una gran matriz con usuarios en
-las filas y peliculas en las columnas, con muchas casillas vacías,
-podemos observarlo aquí, con una muestra de 100 usuarios y 100 peliculas
+We will use the database of ratings of the laboratory of GroupLens research: https://grouplens.org/datasets/movielens/
+
+We can imagine our data as a large matrix with users in the rows and movies in the columns, with many empty squares, we can observe it here, with a sample of 100 users and 100 movies
 
 ```{r}
 set.seed(1)
@@ -38,24 +35,20 @@ edx %>% filter(userId %in% u_id & movieId %in% m_id) %>%
   geom_point(shape = "square filled", fill = "orange", size = 2)
 ```
 
-Podemos observar la distribución de las calificaciones así
+We can observe the distribution of ratings like this
 
 ```{r}
 edx %>% ggplot(aes(rating)) + geom_histogram(binwidth = 1)
 ```
 
-Observamos que la distribución de calificaciones se aproxima a una 
-distribución normal, por lo que podemos como primer modelo calcular el
-promedio de las calificaciones como nuestra predicción
+We observe that the distribution of ratings approaches a normal distribution, so we can as a first model calculate the average of the ratings as our prediction
 
 ```{r}
 mu <- mean(edx$rating)
 mu
 ```
 
-Observamos que el promedio de calificación es 3.51, podemos validar
-contra un conjunto de datos de prueba, para observar la diferencia que
-tenemos al predecir, el error RMSE
+We note that the average rating is 3.51, we can validate against a set of test data, to observe the difference that we have to predict, the error RMSE
 
 ```{r}
 RMSE <- function(true_ratings, predicted_ratings) {
@@ -65,13 +58,11 @@ RMSE <- function(true_ratings, predicted_ratings) {
 RMSE(mu, validation$rating)
 ```
 
-Observamos que obtenemos un error de 1.06. Los usuarios califican 
-del 1 al 5, así que tenemos un error de mas de 1 punto
+We note that we get an error of 1.06. Users rate from 1 to 5, so we have an error of more than 1 point
 
-## Efecto de la pelicula
+## Movie effect
 
-Sabemos por experiencia que algunas peliculas se califican mas altas 
-que otras. Podemos observarlo aquí
+We know from experience that some movies are rated higher what others. We can observe it here
 
 ```{r}
 set.seed(1)
@@ -83,10 +74,7 @@ edx %>% filter(movieId %in% m_id) %>%
   geom_hline(col = "red", yintercept = 3.51)
 ```
 
-Observamos que las peliculas se califican mas o menos que la el promedio
-que calculamos anteriormente de 3.51, esto lo denominamos un sesgo, 
-podemos calcular un promedio del sesgo para cada pelicula para agregar
-este efecto al modelo de esta forma
+We observe that the films are rated more or less than the average that we calculated previously of 3.51, we call this a bias, we can calculate an average of the bias for each movie to add this effect to the model in this way
 
 ```{r}
 movie_avgs <- edx %>%
@@ -94,8 +82,7 @@ movie_avgs <- edx %>%
   summarize(b_i = mean(rating - mu))
 ```
 
-Ahora podemos predecir nuevamente las calificaciones utilizando este
-nuevo modelo
+Now we can predict the ratings again using this new model
 
 ```{r}
 predicted_ratings <- mu + validation %>%
@@ -105,9 +92,9 @@ predicted_ratings <- mu + validation %>%
 RMSE(predicted_ratings, validation$rating)
 ```
 
-## Regularización
+## Regularization
 
-Vemos que nuestra predicción mejoró, obtuvimos un rmse de 0.94, vamos a ver donde es donde estamos fallando en la predicción
+We see that our prediction improved, we obtained a rmse of 0.94, let's see where is where we are failing in the prediction
 
 ```{r}
 validation %>% 
@@ -118,9 +105,7 @@ validation %>%
   slice(1:10) %>% knitr::kable()
 ```
 
-Vamos a ver cuales son las mejores y peores peliculas de acuerdo a 
-nuestra predicción, para esto vamos a generar datos de los titulos
-de las peliculas
+Let's see which are the best and worst movies according to our prediction, for this we are going to generate data of the titles of the movies
 
 ```{r}
 movie_titles <- edx %>%
@@ -128,8 +113,7 @@ movie_titles <- edx %>%
   distinct()
 ```
 
-Observamos cuales son las 10 mejores peliculas de acuerdo a nuestra 
-predicción
+We observe which are the 10 best movies according to our prediction
 
 ```{r}
 movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
@@ -139,8 +123,7 @@ movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
   knitr::kable()
 ```
 
-Y observamos cuales son las 10 peores peliculas de acuerdo a nuestra
-predicción
+And we observe which are the 10 worst movies according to our prediction
 
 ```{r}
 movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
@@ -150,9 +133,9 @@ movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
   knitr::kable()
 ```
 
-Observamos que son peliculas muy obscuras, miremos como se calificaron
+And we observe which are the best and worst movies according to our prediction
 
-Las mejores peliculas
+The best movies
 ```{r}
 edx %>% count(movieId) %>% 
   left_join(movie_avgs) %>%
@@ -163,7 +146,7 @@ edx %>% count(movieId) %>%
   knitr::kable()
 ```
 
-Las peores peliculas
+The worst movies
 ```{r}
 edx %>% count(movieId) %>% 
   left_join(movie_avgs) %>%
@@ -174,11 +157,9 @@ edx %>% count(movieId) %>%
   knitr::kable()
 ```
 
-Vemos que fueron peliculas calificadas por muy pocos usuarios, eso
-hace que crezca o reduzca mucho nuestra predicción
+We see that they were movies rated by very few users, that makes our prediction grow or reduce a lot
 
-Necesitamos regularizacion para penalizar estimaciones grandes 
-que vienen de muestras pequeñas, lo hacemos así
+We need regularization to penalize large estimates that come from small samples, we do it like that
 
 ```{r}
 lambda <- 2.5
@@ -187,8 +168,7 @@ movie_reg_avgs <- edx %>%
   summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n())
 ```
 
-Podemos optimizar el parametro lambda, buscando el que minimice el rmse
-utilizando validación cruzada
+We can optimize the lambda parameter, looking for the one that minimizes the rmse using cross validation
 
 ```{r}
 lambdas <- seq(0, 10, 0.25)
@@ -210,8 +190,7 @@ qplot(lambdas, rmses)
 lambdas[which.min(rmses)]
 ```
 
-Vemos que el lambda que minimise el rmse es , volvemos a calcular los
-promedios de peliculas regularizadas con el lamda optimizado
+We see that the lambda that minimice the rmse, we recalculate the averages of movies regularized with the optimized lamda
 
 ```{r}
 lambda <- lambdas[which.min(rmses)]
@@ -220,7 +199,7 @@ movie_reg_avgs <- edx %>%
   summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n())
 ```
 
-Podemos ver como se redujeron las estimaciones graficando contra las estimaciones anteriores
+We can see how the estimates were reduced by plotting against the previous estimates
 
 ```{r}
 tibble(original = movie_avgs$b_i, 
@@ -230,9 +209,9 @@ tibble(original = movie_avgs$b_i,
   geom_point(shape=1, alpha=0.5)
 ```
 
-Ahora podemos ver las mejores y peores peliculas ya regularizadas
+Now we can see the best and worst movies already regularized
 
-Mejores peliculas ya regularizadas
+Best movies already regularized
 ```{r}
 edx %>%
   count(movieId) %>% 
@@ -244,7 +223,7 @@ edx %>%
   knitr::kable()
 ```
 
-Peores peliculas ya regularizadas
+Worst movies already regularized
 ```{r}
 edx %>%
   count(movieId) %>% 
@@ -256,7 +235,7 @@ edx %>%
   knitr::kable()
 ```
 
-Agregamos la regularización al modelo y predecimos nuevamente
+We add regularization to the model and predict again
 
 ```{r}
 predicted_ratings <- validation %>%
@@ -267,10 +246,9 @@ predicted_ratings <- validation %>%
 RMSE(predicted_ratings, validation$rating)
 ```
 
-## Efecto del usuario
+## User effect
 
-Ahora vemos si existe tambien un efecto de usuario, sabemos también por experiencia que algunos usuarios califican mas que otros, podemos verlo
-de una muestra de 20 usuarios
+Now we see if there is also a user effect, we also know from experience that some users qualify more than others, we can see it from a sample of 20 users
 
 ```{r}
 set.seed(1)
@@ -282,8 +260,7 @@ edx %>% filter(userId %in% u_id) %>%
   geom_hline(col = "red", yintercept = 3.51)
 ```
 
-Podemos agregar este efecto de usuario y optimizando el parametro
-lambda de la siguiente forma
+We can add this user effect and optimizing the parameter lambda in the following way
 
 ```{r}
 lambdas <- seq(0, 10, 0.25)
@@ -316,7 +293,7 @@ lambda <- lambdas[which.min(rmses)]
 lambda
 ```
 
-Con este último modelo obtenemos un rmse de 0.86!
+With this last model we obtain a rmse of 0.86!
 
 ```{r}
 min(rmses)
