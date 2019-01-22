@@ -1,0 +1,323 @@
+---
+title: "Report on Movie Recommendation System"
+author: "Jesus Barbosa"
+date: "21 de enero de 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sistema de Recomendación de Peliculas
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+
+load("rdas/edx.rda")
+load("rdas/validation.rda")
+```
+
+Intentaremos predecir la calificación que un usuario daria a una
+pelicula, basado en la información de calificaciones dadas por otros
+usuarios.
+
+Utilizaremos la base de datos de calificaciones del laboratorio de
+investigacion GroupLens: https://grouplens.org/datasets/movielens/
+
+Podemos imaginar nuestros datos como una gran matriz con usuarios en
+las filas y peliculas en las columnas, con muchas casillas vacías,
+podemos observarlo aquí, con una muestra de 100 usuarios y 100 peliculas
+
+```{r}
+set.seed(1)
+u_id <- sample(500, 100)
+m_id <- sample(500, 100)
+edx %>% filter(userId %in% u_id & movieId %in% m_id) %>% 
+  ggplot(aes(movieId, userId)) + 
+  geom_point(shape = "square filled", fill = "orange", size = 2)
+```
+
+Podemos observar la distribución de las calificaciones así
+
+```{r}
+edx %>% ggplot(aes(rating)) + geom_histogram(binwidth = 1)
+```
+
+Observamos que la distribución de calificaciones se aproxima a una 
+distribución normal, por lo que podemos como primer modelo calcular el
+promedio de las calificaciones como nuestra predicción
+
+```{r}
+mu <- mean(edx$rating)
+mu
+```
+
+Observamos que el promedio de calificación es 3.51, podemos validar
+contra un conjunto de datos de prueba, para observar la diferencia que
+tenemos al predecir, el error RMSE
+
+```{r}
+RMSE <- function(true_ratings, predicted_ratings) {
+  sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+
+RMSE(mu, validation$rating)
+```
+
+Observamos que obtenemos un error de 1.06. Los usuarios califican 
+del 1 al 5, así que tenemos un error de mas de 1 punto
+
+## Efecto de la pelicula
+
+Sabemos por experiencia que algunas peliculas se califican mas altas 
+que otras. Podemos observarlo aquí
+
+```{r}
+set.seed(1)
+m_id <- sample(1:2000, 20)
+edx %>% filter(movieId %in% m_id) %>%
+  group_by(movieId) %>% 
+  ggplot(aes(factor(movieId), rating)) +
+  geom_boxplot() + 
+  geom_hline(col = "red", yintercept = 3.51)
+```
+
+Observamos que las peliculas se califican mas o menos que la el promedio
+que calculamos anteriormente de 3.51, esto lo denominamos un sesgo, 
+podemos calcular un promedio del sesgo para cada pelicula para agregar
+este efecto al modelo de esta forma
+
+```{r}
+movie_avgs <- edx %>%
+  group_by(movieId) %>%
+  summarize(b_i = mean(rating - mu))
+```
+
+Ahora podemos predecir nuevamente las calificaciones utilizando este
+nuevo modelo
+
+```{r}
+predicted_ratings <- mu + validation %>%
+  left_join(movie_avgs, by = "movieId") %>%
+  .$b_i
+
+RMSE(predicted_ratings, validation$rating)
+```
+
+## Regularización
+
+Vemos que nuestra predicción mejoró, obtuvimos un rmse de 0.94, vamos a ver donde es donde estamos fallando en la predicción
+
+```{r}
+validation %>% 
+  left_join(movie_avgs, by = "movieId") %>%
+  mutate(residual = rating - (mu + b_i)) %>%
+  arrange(desc(abs(residual))) %>%
+  select(title, residual) %>% 
+  slice(1:10) %>% knitr::kable()
+```
+
+Vamos a ver cuales son las mejores y peores peliculas de acuerdo a 
+nuestra predicción, para esto vamos a generar datos de los titulos
+de las peliculas
+
+```{r}
+movie_titles <- edx %>%
+  select(movieId, title) %>%
+  distinct()
+```
+
+Observamos cuales son las 10 mejores peliculas de acuerdo a nuestra 
+predicción
+
+```{r}
+movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
+  arrange(desc(b_i)) %>%
+  select(title, b_i) %>%
+  slice(1:10) %>%
+  knitr::kable()
+```
+
+Y observamos cuales son las 10 peores peliculas de acuerdo a nuestra
+predicción
+
+```{r}
+movie_avgs %>% left_join(movie_titles, by = "movieId") %>%
+  arrange(b_i) %>%
+  select(title, b_i) %>%
+  slice(1:10) %>%
+  knitr::kable()
+```
+
+Observamos que son peliculas muy obscuras, miremos como se calificaron
+
+Las mejores peliculas
+```{r}
+edx %>% count(movieId) %>% 
+  left_join(movie_avgs) %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(desc(b_i)) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+```
+
+Las peores peliculas
+```{r}
+edx %>% count(movieId) %>% 
+  left_join(movie_avgs) %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+```
+
+Vemos que fueron peliculas calificadas por muy pocos usuarios, eso
+hace que crezca o reduzca mucho nuestra predicción
+
+Necesitamos regularizacion para penalizar estimaciones grandes 
+que vienen de muestras pequeñas, lo hacemos así
+
+```{r}
+lambda <- 2.5
+movie_reg_avgs <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n())
+```
+
+Podemos optimizar el parametro lambda, buscando el que minimice el rmse
+utilizando validación cruzada
+
+```{r}
+lambdas <- seq(0, 10, 0.25)
+
+mu <- mean(edx$rating)
+just_the_sum <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(s = sum(rating - mu), n_i = n())
+
+rmses <- sapply(lambdas, function(l){
+  predicted_ratings <- validation %>% 
+    left_join(just_the_sum, by='movieId') %>% 
+    mutate(b_i = s/(n_i+l)) %>%
+    mutate(pred = mu + b_i) %>%
+    .$pred
+  return(RMSE(predicted_ratings, validation$rating))
+})
+qplot(lambdas, rmses)  
+lambdas[which.min(rmses)]
+```
+
+Vemos que el lambda que minimise el rmse es , volvemos a calcular los
+promedios de peliculas regularizadas con el lamda optimizado
+
+```{r}
+lambda <- lambdas[which.min(rmses)]
+movie_reg_avgs <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n())
+```
+
+Podemos ver como se redujeron las estimaciones graficando contra las estimaciones anteriores
+
+```{r}
+tibble(original = movie_avgs$b_i, 
+           regularlized = movie_reg_avgs$b_i, 
+           n = movie_reg_avgs$n_i) %>%
+  ggplot(aes(original, regularlized, size=sqrt(n))) + 
+  geom_point(shape=1, alpha=0.5)
+```
+
+Ahora podemos ver las mejores y peores peliculas ya regularizadas
+
+Mejores peliculas ya regularizadas
+```{r}
+edx %>%
+  count(movieId) %>% 
+  left_join(movie_reg_avgs) %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(desc(b_i)) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+```
+
+Peores peliculas ya regularizadas
+```{r}
+edx %>%
+  count(movieId) %>% 
+  left_join(movie_reg_avgs) %>%
+  left_join(movie_titles, by="movieId") %>%
+  arrange(b_i) %>% 
+  select(title, b_i, n) %>% 
+  slice(1:10) %>% 
+  knitr::kable()
+```
+
+Agregamos la regularización al modelo y predecimos nuevamente
+
+```{r}
+predicted_ratings <- validation %>%
+  left_join(movie_reg_avgs, by = "movieId") %>%
+  mutate(pred = mu + b_i) %>%
+  .$pred
+
+RMSE(predicted_ratings, validation$rating)
+```
+
+## Efecto del usuario
+
+Ahora vemos si existe tambien un efecto de usuario, sabemos también por experiencia que algunos usuarios califican mas que otros, podemos verlo
+de una muestra de 20 usuarios
+
+```{r}
+set.seed(1)
+u_id <- sample(1:2000, 20)
+edx %>% filter(userId %in% u_id) %>%
+  group_by(userId) %>% 
+  ggplot(aes(factor(userId), rating)) +
+  geom_boxplot() + 
+  geom_hline(col = "red", yintercept = 3.51)
+```
+
+Podemos agregar este efecto de usuario y optimizando el parametro
+lambda de la siguiente forma
+
+```{r}
+lambdas <- seq(0, 10, 0.25)
+
+rmses <- sapply(lambdas, function(l){
+  
+  mu <- mean(edx$rating)
+  
+  b_i <- edx %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n()+l))
+  
+  b_u <- edx %>% 
+    left_join(b_i, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+  
+  predicted_ratings <- 
+    validation %>% 
+    left_join(b_i, by = "movieId") %>%
+    left_join(b_u, by = "userId") %>%
+    mutate(pred = mu + b_i + b_u) %>%
+    .$pred
+  
+  return(RMSE(predicted_ratings, validation$rating))
+})
+
+qplot(lambdas, rmses)
+lambda <- lambdas[which.min(rmses)]
+lambda
+```
+
+Con este último modelo obtenemos un rmse de 0.86!
+
+```{r}
+min(rmses)
+```
